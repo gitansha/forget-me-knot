@@ -1,0 +1,26 @@
+name: Send Plant Reminders
+
+on:
+  schedule:
+    - cron: '0 8,20 * * *'  # 8 AM & 8 PM UTC daily
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  send-reminders:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: pip install python-telegram-bot httpx
+      
+      - name: Send reminders
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          REDIS_API_URL: ${{ secrets.KV_REST_API_URL }}
+        run: python scripts/send_reminders.py
