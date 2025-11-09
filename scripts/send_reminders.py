@@ -4,31 +4,45 @@ import asyncio
 import random
 from datetime import datetime
 from telegram import Bot
-import httpx
-import redis
+import redis.asyncio as redis
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-REDIS_API_URL = os.getenv("REDIS_API_URL")
+REDIS_URL = os.getenv("REDIS_URL")
 
-redis_client = redis.Redis.from_url(os.environ.get("REDIS_URL"))
+
+async def get_redis_client():
+    """Get Redis client"""
+    return redis.from_url(REDIS_URL, encoding="utf-8", decode_responses=True)
 
 
 async def get_from_redis(key):
     """Get value from Redis"""
+    client = None
     try:
-        return redis_client.get(key)
+        client = await get_redis_client()
+        value = await client.get(key)
+        return value
     except Exception as e:
         print(f"Error getting {key}: {e}")
         return None
+    finally:
+        if client:
+            await client.close()
 
 
 async def get_keys(pattern):
     """Get keys matching pattern from Redis"""
+    client = None
     try:
-        return redis_client.keys(pattern)
+        client = await get_redis_client()
+        keys = await client.keys(pattern)
+        return keys
     except Exception as e:
         print(f"Error getting keys: {e}")
         return []
+    finally:
+        if client:
+            await client.close()
 
 
 async def get_needy_plants():
@@ -85,14 +99,29 @@ async def send_reminders():
         print("✅ No plants need watering")
         return
 
-    # Build reminder message
-    with open("plant_reminders.txt", "r") as file:
-        lines = file.readlines()
+    # Build reminder message with random greeting
+    reminders = [
+        "💧 Time to water your plants!",
+        "🌱 Your plants are thirsty!",
+        "🚿 Watering time!",
+        "🌿 Don't forget your plants!",
+        "💦 Plant care reminder!",
+        "🪴 Your green friends need you!",
+        "🌺 Plant watering alert!",
+        "🍃 Time for some plant TLC!",
+    ]
 
-    # Get a random line number
-    reminder = lines[random.randint(0, len(lines) - 1)].strip()
+    # Try to read from file, fallback to default reminders
+    try:
+        if os.path.exists("plant_reminders.txt"):
+            with open("plant_reminders.txt", "r") as file:
+                lines = [line.strip() for line in file.readlines() if line.strip()]
+                if lines:
+                    reminders = lines
+    except Exception as e:
+        print(f"⚠️ Could not read plant_reminders.txt: {e}")
 
-    message = f"{random.choice(reminder)}\n\n"
+    message = f"{random.choice(reminders)}\n\n"
     message += "\n".join(needy_plants)
     message += "\n\nUse /watered when you've watered your plant! 🌿"
 

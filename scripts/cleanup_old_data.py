@@ -2,73 +2,59 @@ import os
 import json
 import asyncio
 from datetime import datetime, timedelta
+import redis.asyncio as redis
 
-# import httpx
-import redis
+REDIS_URL = os.getenv("REDIS_URL")
 
-REDIS_API_URL = os.getenv("REDIS_API_URL")
 
-redis_client = redis.Redis.from_url(os.environ.get("REDIS_URL"))
-
-# async def redis_get(key):
-#     """Get value from Vercel KV"""
-#     try:
-#         async with httpx.AsyncClient() as client:
-#             response = await client.get(
-#                 f"{REDIS_API_URL}/get/{key}",
-#                 headers={"Authorization": f"Bearer {REDIS_API_TOKEN}"},
-#             )
-#             if response.status_code == 200:
-#                 result = response.json()
-#                 return result.get("result")
-#             return None
-#     except Exception as e:
-#         print(f"Error getting {key}: {e}")
-#         return None
+async def get_redis_client():
+    """Get Redis client"""
+    return redis.from_url(REDIS_URL, encoding="utf-8", decode_responses=True)
 
 
 async def delete_key(key):
     """Delete key from Redis"""
+    client = None
     try:
-        return redis_client.delete(key)
+        client = await get_redis_client()
+        result = await client.delete(key)
+        return result > 0
     except Exception as e:
         print(f"Error deleting {key}: {e}")
         return False
-
-
-# async def kv_keys(pattern):
-#     """Get keys matching pattern"""
-#     try:
-#         async with httpx.AsyncClient() as client:
-#             response = await client.get(
-#                 f"{KV_REST_API_URL}/keys/{pattern}",
-#                 headers={"Authorization": f"Bearer {KV_REST_API_TOKEN}"},
-#             )
-#             if response.status_code == 200:
-#                 result = response.json()
-#                 return result.get("result", [])
-#             return []
-#     except Exception as e:
-#         print(f"Error getting keys: {e}")
-#         return []
+    finally:
+        if client:
+            await client.close()
 
 
 async def get_from_redis(key):
     """Get value from Redis"""
+    client = None
     try:
-        return redis_client.get(key)
+        client = await get_redis_client()
+        value = await client.get(key)
+        return value
     except Exception as e:
         print(f"Error getting {key}: {e}")
         return None
+    finally:
+        if client:
+            await client.close()
 
 
 async def get_keys(pattern):
     """Get keys matching pattern from Redis"""
+    client = None
     try:
-        return redis_client.keys(pattern)
+        client = await get_redis_client()
+        keys = await client.keys(pattern)
+        return keys
     except Exception as e:
         print(f"Error getting keys: {e}")
         return []
+    finally:
+        if client:
+            await client.close()
 
 
 async def cleanup_old_data():

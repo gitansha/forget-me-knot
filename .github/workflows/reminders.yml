@@ -17,10 +17,10 @@ jobs:
           python-version: '3.11'
       
       - name: Install dependencies
-        run: pip install python-telegram-bot httpx
+        run: pip install python-telegram-bot redis
       
       - name: Send reminders
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          REDIS_API_URL: ${{ secrets.KV_REST_API_URL }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
         run: python scripts/send_reminders.py

@@ -5,13 +5,13 @@ from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 import asyncio
-import redis
+import redis.asyncio as redis
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-r = redis.Redis.from_url(os.environ.get("REDIS_API_URL"))
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+REDIS_URL = os.getenv("REDIS_URL")
 
 # Redis Keys
 CHAT_IDS_KEY = "plant_bot:chat_ids"
@@ -22,74 +22,113 @@ PLANT_PREFIX = "plant_bot:user:"
 class RedisDataManager:
     """Manages data in Redis"""
 
+    def __init__(self):
+        self.redis_url = REDIS_URL
+
+    async def _get_client(self):
+        """Get Redis client"""
+        return redis.from_url(self.redis_url, encoding="utf-8", decode_responses=True)
+
     async def get_chat_ids(self):
         """Get all registered chat IDs"""
+        client = None
         try:
-            chat_ids = await r.get(CHAT_IDS_KEY)
+            client = await self._get_client()
+            chat_ids = await client.get(CHAT_IDS_KEY)
             return json.loads(chat_ids) if chat_ids else []
         except Exception as e:
             logger.error(f"Error getting chat IDs: {e}")
             return []
+        finally:
+            if client:
+                await client.close()
 
     async def add_chat_id(self, chat_id):
         """Add a chat ID to the list"""
+        client = None
         try:
+            client = await self._get_client()
             chat_ids = await self.get_chat_ids()
             if chat_id not in chat_ids:
                 chat_ids.append(chat_id)
-                await r.set(CHAT_IDS_KEY, json.dumps(chat_ids))
+                await client.set(CHAT_IDS_KEY, json.dumps(chat_ids))
             return True
         except Exception as e:
             logger.error(f"Error adding chat ID: {e}")
             return False
+        finally:
+            if client:
+                await client.close()
 
     async def get_reminders_enabled(self):
         """Check if reminders are enabled"""
+        client = None
         try:
-            enabled = await r.get(REMINDERS_KEY)
+            client = await self._get_client()
+            enabled = await client.get(REMINDERS_KEY)
             return enabled != "false" if enabled else True
         except Exception as e:
             logger.error(f"Error getting reminders status: {e}")
             return True
+        finally:
+            if client:
+                await client.close()
 
     async def set_reminders_enabled(self, enabled):
         """Enable/disable reminders"""
+        client = None
         try:
-            await r.set(REMINDERS_KEY, "true" if enabled else "false")
+            client = await self._get_client()
+            await client.set(REMINDERS_KEY, "true" if enabled else "false")
             return True
         except Exception as e:
             logger.error(f"Error setting reminders: {e}")
             return False
+        finally:
+            if client:
+                await client.close()
 
     async def get_plant(self, user_id):
         """Get plant data for a user"""
+        client = None
         try:
+            client = await self._get_client()
             key = f"{PLANT_PREFIX}{user_id}"
-            plant_data = await r.get(key)
+            plant_data = await client.get(key)
             return json.loads(plant_data) if plant_data else None
         except Exception as e:
             logger.error(f"Error getting plant for {user_id}: {e}")
             return None
+        finally:
+            if client:
+                await client.close()
 
     async def save_plant(self, user_id, plant_data):
         """Save plant data for a user"""
+        client = None
         try:
+            client = await self._get_client()
             key = f"{PLANT_PREFIX}{user_id}"
-            await r.set(key, json.dumps(plant_data))
+            await client.set(key, json.dumps(plant_data))
             return True
         except Exception as e:
             logger.error(f"Error saving plant for {user_id}: {e}")
             return False
+        finally:
+            if client:
+                await client.close()
 
     async def get_all_plants(self):
         """Get all plants (for status command)"""
+        client = None
         try:
+            client = await self._get_client()
             # Get all keys matching plant prefix
-            keys = await r.keys(f"{PLANT_PREFIX}*")
+            keys = await client.keys(f"{PLANT_PREFIX}*")
             plants = {}
 
             for key in keys:
-                plant_data = await r.get(key)
+                plant_data = await client.get(key)
                 if plant_data:
                     user_id = key.replace(PLANT_PREFIX, "")
                     plants[user_id] = json.loads(plant_data)
@@ -98,6 +137,9 @@ class RedisDataManager:
         except Exception as e:
             logger.error(f"Error getting all plants: {e}")
             return {}
+        finally:
+            if client:
+                await client.close()
 
 
 class PlantBotHandlers:
@@ -345,10 +387,11 @@ def handler(request):
     if request.method == "POST":
         try:
             update_data = request.get_json()
+            logger.info(f"Received update: {json.dumps(update_data)[:200]}")
             asyncio.run(handle_update(update_data))
             return {"statusCode": 200, "body": "OK"}
         except Exception as e:
-            logger.error(f"Error processing update: {e}")
+            logger.error(f"Error processing update: {e}", exc_info=True)
             return {"statusCode": 500, "body": str(e)}
 
     return {"statusCode": 200, "body": "Bot is running"}
