@@ -1,3 +1,4 @@
 *env
-*.json
 *pycache*
+*.pyc
+node_modules/
