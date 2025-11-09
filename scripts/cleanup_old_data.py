@@ -2,7 +2,8 @@ import os
 import json
 import asyncio
 from datetime import datetime, timedelta
-import httpx
+
+# import httpx
 import redis
 
 REDIS_API_URL = os.getenv("REDIS_API_URL")
