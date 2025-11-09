@@ -21,6 +21,5 @@ jobs:
       
       - name: Cleanup old data
         env:
-          KV_REST_API_URL: ${{ secrets.KV_REST_API_URL }}
-          KV_REST_API_TOKEN: ${{ secrets.KV_REST_API_TOKEN }}
+          REDIS_API_URL: ${{ secrets.KV_REST_API_URL }}
         run: python scripts/cleanup_old_data.py

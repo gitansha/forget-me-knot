@@ -3,54 +3,68 @@ import json
 import asyncio
 from datetime import datetime, timedelta
 import httpx
+import redis
 
-KV_REST_API_URL = os.getenv("KV_REST_API_URL")
-KV_REST_API_TOKEN = os.getenv("KV_REST_API_TOKEN")
+REDIS_API_URL = os.getenv("REDIS_API_URL")
+
+redis_client = redis.Redis.from_url(os.environ.get("REDIS_URL"))
+
+# async def redis_get(key):
+#     """Get value from Vercel KV"""
+#     try:
+#         async with httpx.AsyncClient() as client:
+#             response = await client.get(
+#                 f"{REDIS_API_URL}/get/{key}",
+#                 headers={"Authorization": f"Bearer {REDIS_API_TOKEN}"},
+#             )
+#             if response.status_code == 200:
+#                 result = response.json()
+#                 return result.get("result")
+#             return None
+#     except Exception as e:
+#         print(f"Error getting {key}: {e}")
+#         return None
 
 
-async def kv_get(key):
-    """Get value from Vercel KV"""
+async def delete_key(key):
+    """Delete key from Redis"""
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{KV_REST_API_URL}/get/{key}",
-                headers={"Authorization": f"Bearer {KV_REST_API_TOKEN}"},
-            )
-            if response.status_code == 200:
-                result = response.json()
-                return result.get("result")
-            return None
-    except Exception as e:
-        print(f"Error getting {key}: {e}")
-        return None
-
-
-async def kv_delete(key):
-    """Delete key from Vercel KV"""
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{KV_REST_API_URL}/del/{key}",
-                headers={"Authorization": f"Bearer {KV_REST_API_TOKEN}"},
-            )
-            return response.status_code == 200
+        return redis_client.delete(key)
     except Exception as e:
         print(f"Error deleting {key}: {e}")
         return False
 
 
-async def kv_keys(pattern):
-    """Get keys matching pattern"""
+# async def kv_keys(pattern):
+#     """Get keys matching pattern"""
+#     try:
+#         async with httpx.AsyncClient() as client:
+#             response = await client.get(
+#                 f"{KV_REST_API_URL}/keys/{pattern}",
+#                 headers={"Authorization": f"Bearer {KV_REST_API_TOKEN}"},
+#             )
+#             if response.status_code == 200:
+#                 result = response.json()
+#                 return result.get("result", [])
+#             return []
+#     except Exception as e:
+#         print(f"Error getting keys: {e}")
+#         return []
+
+
+async def get_from_redis(key):
+    """Get value from Redis"""
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{KV_REST_API_URL}/keys/{pattern}",
-                headers={"Authorization": f"Bearer {KV_REST_API_TOKEN}"},
-            )
-            if response.status_code == 200:
-                result = response.json()
-                return result.get("result", [])
-            return []
+        return redis_client.get(key)
+    except Exception as e:
+        print(f"Error getting {key}: {e}")
+        return None
+
+
+async def get_keys(pattern):
+    """Get keys matching pattern from Redis"""
+    try:
+        return redis_client.keys(pattern)
     except Exception as e:
         print(f"Error getting keys: {e}")
         return []
@@ -64,14 +78,14 @@ async def cleanup_old_data():
     print(f"📅 Cutoff date: {cutoff_date.strftime('%Y-%m-%d %H:%M')}")
 
     # Get all plant keys
-    keys = await kv_keys("plant_bot:user:*")
+    keys = await get_keys("plant_bot:user:*")
     print(f"🔍 Found {len(keys)} plant records")
 
     deleted = 0
     kept = 0
 
     for key in keys:
-        plant_json = await kv_get(key)
+        plant_json = await get_from_redis(key)
         if not plant_json:
             continue
 
@@ -106,7 +120,7 @@ async def cleanup_old_data():
                 username = plant.get("username", "Unknown")
                 plant_name = plant.get("plant_name", "Unknown")
 
-                if await kv_delete(key):
+                if await delete_key(key):
                     deleted += 1
                     print(f"🗑️ Deleted: {plant_name} ({username}) - {reason}")
                 else:

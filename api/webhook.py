@@ -4,27 +4,28 @@ import logging
 from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
-from vercel_kv import kv
 import asyncio
+import redis
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+r = redis.Redis.from_url(os.environ.get("REDIS_API_URL"))
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-# Vercel KV Keys
+# Redis Keys
 CHAT_IDS_KEY = "plant_bot:chat_ids"
 REMINDERS_KEY = "plant_bot:reminders_enabled"
 PLANT_PREFIX = "plant_bot:user:"
 
 
-class VercelKVDataManager:
-    """Manages data in Vercel KV (Redis)"""
+class RedisDataManager:
+    """Manages data in Redis"""
 
     async def get_chat_ids(self):
         """Get all registered chat IDs"""
         try:
-            chat_ids = await kv.get(CHAT_IDS_KEY)
+            chat_ids = await r.get(CHAT_IDS_KEY)
             return json.loads(chat_ids) if chat_ids else []
         except Exception as e:
             logger.error(f"Error getting chat IDs: {e}")
@@ -36,7 +37,7 @@ class VercelKVDataManager:
             chat_ids = await self.get_chat_ids()
             if chat_id not in chat_ids:
                 chat_ids.append(chat_id)
-                await kv.set(CHAT_IDS_KEY, json.dumps(chat_ids))
+                await r.set(CHAT_IDS_KEY, json.dumps(chat_ids))
             return True
         except Exception as e:
             logger.error(f"Error adding chat ID: {e}")
@@ -45,7 +46,7 @@ class VercelKVDataManager:
     async def get_reminders_enabled(self):
         """Check if reminders are enabled"""
         try:
-            enabled = await kv.get(REMINDERS_KEY)
+            enabled = await r.get(REMINDERS_KEY)
             return enabled != "false" if enabled else True
         except Exception as e:
             logger.error(f"Error getting reminders status: {e}")
@@ -54,7 +55,7 @@ class VercelKVDataManager:
     async def set_reminders_enabled(self, enabled):
         """Enable/disable reminders"""
         try:
-            await kv.set(REMINDERS_KEY, "true" if enabled else "false")
+            await r.set(REMINDERS_KEY, "true" if enabled else "false")
             return True
         except Exception as e:
             logger.error(f"Error setting reminders: {e}")
@@ -64,7 +65,7 @@ class VercelKVDataManager:
         """Get plant data for a user"""
         try:
             key = f"{PLANT_PREFIX}{user_id}"
-            plant_data = await kv.get(key)
+            plant_data = await r.get(key)
             return json.loads(plant_data) if plant_data else None
         except Exception as e:
             logger.error(f"Error getting plant for {user_id}: {e}")
@@ -74,7 +75,7 @@ class VercelKVDataManager:
         """Save plant data for a user"""
         try:
             key = f"{PLANT_PREFIX}{user_id}"
-            await kv.set(key, json.dumps(plant_data))
+            await r.set(key, json.dumps(plant_data))
             return True
         except Exception as e:
             logger.error(f"Error saving plant for {user_id}: {e}")
@@ -84,11 +85,11 @@ class VercelKVDataManager:
         """Get all plants (for status command)"""
         try:
             # Get all keys matching plant prefix
-            keys = await kv.keys(f"{PLANT_PREFIX}*")
+            keys = await r.keys(f"{PLANT_PREFIX}*")
             plants = {}
 
             for key in keys:
-                plant_data = await kv.get(key)
+                plant_data = await r.get(key)
                 if plant_data:
                     user_id = key.replace(PLANT_PREFIX, "")
                     plants[user_id] = json.loads(plant_data)
@@ -318,7 +319,7 @@ Data older than 7 days is automatically cleaned up.
 
 async def handle_update(update_data):
     """Process incoming webhook update"""
-    dm = VercelKVDataManager()
+    dm = RedisDataManager()
     handlers = PlantBotHandlers(dm)
 
     app = Application.builder().token(BOT_TOKEN).build()

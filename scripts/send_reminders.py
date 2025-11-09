@@ -5,42 +5,27 @@ import random
 from datetime import datetime
 from telegram import Bot
 import httpx
+import redis
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-KV_REST_API_URL = os.getenv("KV_REST_API_URL")
-KV_REST_API_TOKEN = os.getenv("KV_REST_API_TOKEN")
+REDIS_API_URL = os.getenv("REDIS_API_URL")
+
+redis_client = redis.Redis.from_url(os.environ.get("REDIS_URL"))
 
 
-async def kv_get(key):
-    """Get value from Vercel KV using REST API"""
+async def get_from_redis(key):
+    """Get value from Redis"""
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{KV_REST_API_URL}/get/{key}",
-                headers={"Authorization": f"Bearer {KV_REST_API_TOKEN}"},
-            )
-            if response.status_code == 200:
-                result = response.json()
-                return result.get("result")
-            return None
+        return redis_client.get(key)
     except Exception as e:
         print(f"Error getting {key}: {e}")
         return None
 
 
-async def kv_keys(pattern):
-    """Get keys matching pattern from Vercel KV"""
+async def get_keys(pattern):
+    """Get keys matching pattern from Redis"""
     try:
-        async with httpx.AsyncClient() as client:
-            # Use SCAN command for pattern matching
-            response = await client.get(
-                f"{KV_REST_API_URL}/keys/{pattern}",
-                headers={"Authorization": f"Bearer {KV_REST_API_TOKEN}"},
-            )
-            if response.status_code == 200:
-                result = response.json()
-                return result.get("result", [])
-            return []
+        return redis_client.keys(pattern)
     except Exception as e:
         print(f"Error getting keys: {e}")
         return []
@@ -51,10 +36,10 @@ async def get_needy_plants():
     needy = []
 
     # Get all plant keys
-    keys = await kv_keys("plant_bot:user:*")
+    keys = await get_keys("plant_bot:user:*")
 
     for key in keys:
-        plant_json = await kv_get(key)
+        plant_json = await get_from_redis(key)
         if not plant_json:
             continue
 
@@ -88,7 +73,7 @@ async def send_reminders():
     print("🚀 Starting reminder check...")
 
     # Check if reminders are enabled
-    reminders_enabled = await kv_get("plant_bot:reminders_enabled")
+    reminders_enabled = await get_from_redis("plant_bot:reminders_enabled")
     if reminders_enabled == "false":
         print("ℹ️ Reminders are disabled")
         return
@@ -112,7 +97,7 @@ async def send_reminders():
     message += "\n\nUse /watered when you've watered your plant! 🌿"
 
     # Get all registered chat IDs
-    chat_ids_json = await kv_get("plant_bot:chat_ids")
+    chat_ids_json = await get_from_redis("plant_bot:chat_ids")
     if not chat_ids_json:
         print("ℹ️ No chat IDs registered")
         return
