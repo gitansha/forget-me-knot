@@ -101,16 +101,13 @@ async def send_reminders():
         return
 
     # Build reminder message
-    messages = [
-        "💧 Time to water your plants!",
-        "🌱 Your plants are thirsty!",
-        "🚿 Watering reminder!",
-        "🌿 Don't forget your green friends!",
-        "💦 Plants need love!",
-        "🪴 Watering time!",
-    ]
+    with open("plant_reminders.txt", "r") as file:
+        lines = file.readlines()
 
-    message = f"{random.choice(messages)}\n\n"
+    # Get a random line number
+    reminder = lines[random.randint(0, len(lines) - 1)].strip()
+
+    message = f"{random.choice(reminder)}\n\n"
     message += "\n".join(needy_plants)
     message += "\n\nUse /watered when you've watered your plant! 🌿"
 
