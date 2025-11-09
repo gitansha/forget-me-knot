@@ -2,5 +2,5 @@ python-telegram-bot==22.3
 schedule==1.2.2
 dotenv==0.9.9 
 python-dotenv==1.1.1
-vercel-kv==0.4.0
+redis
 httpx==0.25.0
