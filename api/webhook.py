@@ -6,6 +6,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 import asyncio
 import redis.asyncio as redis
+from http.server import BaseHTTPRequestHandler
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -359,39 +360,70 @@ Data older than 7 days is automatically cleaned up.
         await update.message.reply_text("❌ Watering reminders disabled!")
 
 
-async def handle_update(update_data):
+async def process_update(update_data):
     """Process incoming webhook update"""
-    dm = RedisDataManager()
-    handlers = PlantBotHandlers(dm)
+    try:
+        dm = RedisDataManager()
+        handlers = PlantBotHandlers(dm)
 
-    app = Application.builder().token(BOT_TOKEN).build()
+        app = Application.builder().token(BOT_TOKEN).build()
 
-    # Add command handlers
-    app.add_handler(CommandHandler("start", handlers.start))
-    app.add_handler(CommandHandler("watered", handlers.watered))
-    app.add_handler(CommandHandler("status", handlers.status))
-    app.add_handler(CommandHandler("mystatus", handlers.my_status))
-    app.add_handler(CommandHandler("setplant", handlers.set_plant_name))
-    app.add_handler(CommandHandler("help", handlers.help_command))
-    app.add_handler(CommandHandler("enable", handlers.enable_reminders))
-    app.add_handler(CommandHandler("disable", handlers.disable_reminders))
+        # Add command handlers
+        app.add_handler(CommandHandler("start", handlers.start))
+        app.add_handler(CommandHandler("watered", handlers.watered))
+        app.add_handler(CommandHandler("status", handlers.status))
+        app.add_handler(CommandHandler("mystatus", handlers.my_status))
+        app.add_handler(CommandHandler("setplant", handlers.set_plant_name))
+        app.add_handler(CommandHandler("help", handlers.help_command))
+        app.add_handler(CommandHandler("enable", handlers.enable_reminders))
+        app.add_handler(CommandHandler("disable", handlers.disable_reminders))
 
-    await app.initialize()
-    await app.process_update(Update.de_json(update_data, app.bot))
-    await app.shutdown()
+        await app.initialize()
+        await app.process_update(Update.de_json(update_data, app.bot))
+        await app.shutdown()
+
+        logger.info("✅ Update processed successfully")
+
+    except Exception as e:
+        logger.error(f"❌ Error processing update: {e}", exc_info=True)
+        raise
 
 
 # Vercel serverless function handler
-def handler(request):
-    """Entry point for Vercel"""
-    if request.method == "POST":
+class handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        """Handle POST requests from Telegram"""
         try:
-            update_data = request.get_json()
-            logger.info(f"Received update: {json.dumps(update_data)[:200]}")
-            asyncio.run(handle_update(update_data))
-            return {"statusCode": 200, "body": "OK"}
-        except Exception as e:
-            logger.error(f"Error processing update: {e}", exc_info=True)
-            return {"statusCode": 500, "body": str(e)}
+            # Read the request body
+            content_length = int(self.headers.get("Content-Length", 0))
+            post_data = self.rfile.read(content_length)
+            update_data = json.loads(post_data.decode("utf-8"))
 
-    return {"statusCode": 200, "body": "Bot is running"}
+            logger.info(f"📨 Received update: {json.dumps(update_data)[:200]}...")
+
+            # Process the update
+            asyncio.run(process_update(update_data))
+
+            # Send success response
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            response = json.dumps({"ok": True})
+            self.wfile.write(response.encode("utf-8"))
+
+            logger.info("✅ Response sent to Telegram")
+
+        except Exception as e:
+            logger.error(f"❌ Error in POST handler: {e}", exc_info=True)
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            error_response = json.dumps({"ok": False, "error": str(e)})
+            self.wfile.write(error_response.encode("utf-8"))
+
+    def do_GET(self):
+        """Handle GET requests (for health checks)"""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.end_headers()
+        self.wfile.write("🌱 Plant Bot is running!")
