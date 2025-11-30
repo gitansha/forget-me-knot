@@ -360,7 +360,7 @@ Data older than 7 days is automatically cleaned up.
         await update.message.reply_text("❌ Watering reminders disabled!")
 
 
-async def handle_update(update_data):
+async def process_update(update_data):
     """Process incoming webhook update"""
     try:
         logger.info(f"Processing update: {json.dumps(update_data)[:200]}")
@@ -397,14 +397,15 @@ class handler(BaseHTTPRequestHandler):
         """Handle incoming webhook from Telegram"""
         try:
             # Read the POST data
+
             content_length = int(self.headers.get("Content-Length", 0))
             post_data = self.rfile.read(content_length)
             update_data = json.loads(post_data.decode("utf-8"))
-
             logger.info(f"📨 Received webhook: {json.dumps(update_data)[:200]}")
 
             # Process the update
             asyncio.run(handle_update(update_data))
+
 
             # Send success response
             self.send_response(200)
@@ -413,11 +414,15 @@ class handler(BaseHTTPRequestHandler):
             response = json.dumps({"ok": True})
             self.wfile.write(response.encode("utf-8"))
 
+            logger.info("✅ Response sent to Telegram")
+
+
         except Exception as e:
             logger.error(f"❌ Error in POST handler: {e}", exc_info=True)
             self.send_response(500)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
+
             response = json.dumps({"ok": False, "error": str(e)})
             self.wfile.write(response.encode("utf-8"))
 
