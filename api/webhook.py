@@ -363,6 +363,8 @@ Data older than 7 days is automatically cleaned up.
 async def process_update(update_data):
     """Process incoming webhook update"""
     try:
+        logger.info(f"Processing update: {json.dumps(update_data)[:200]}")
+
         dm = RedisDataManager()
         handlers = PlantBotHandlers(dm)
 
@@ -385,24 +387,25 @@ async def process_update(update_data):
         logger.info("✅ Update processed successfully")
 
     except Exception as e:
-        logger.error(f"❌ Error processing update: {e}", exc_info=True)
+        logger.error(f"❌ Error in handle_update: {e}", exc_info=True)
         raise
 
 
 # Vercel serverless function handler
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
-        """Handle POST requests from Telegram"""
+        """Handle incoming webhook from Telegram"""
         try:
-            # Read the request body
+            # Read the POST data
+
             content_length = int(self.headers.get("Content-Length", 0))
             post_data = self.rfile.read(content_length)
             update_data = json.loads(post_data.decode("utf-8"))
-
-            logger.info(f"📨 Received update: {json.dumps(update_data)[:200]}...")
+            logger.info(f"📨 Received webhook: {json.dumps(update_data)[:200]}")
 
             # Process the update
-            asyncio.run(process_update(update_data))
+            asyncio.run(handle_update(update_data))
+
 
             # Send success response
             self.send_response(200)
@@ -413,17 +416,20 @@ class handler(BaseHTTPRequestHandler):
 
             logger.info("✅ Response sent to Telegram")
 
+
         except Exception as e:
             logger.error(f"❌ Error in POST handler: {e}", exc_info=True)
             self.send_response(500)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            error_response = json.dumps({"ok": False, "error": str(e)})
-            self.wfile.write(error_response.encode("utf-8"))
+
+            response = json.dumps({"ok": False, "error": str(e)})
+            self.wfile.write(response.encode("utf-8"))
 
     def do_GET(self):
-        """Handle GET requests (for health checks)"""
+        """Handle GET requests - health check"""
         self.send_response(200)
-        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.end_headers()
-        self.wfile.write("🌱 Plant Bot is running!")
+        # IMPORTANT: Encode string to bytes using .encode()
+        self.wfile.write("🌱 Plant Bot is running!".encode("utf-8"))
