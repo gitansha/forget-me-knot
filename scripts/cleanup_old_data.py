@@ -3,13 +3,28 @@ import json
 import asyncio
 from datetime import datetime, timedelta
 import redis.asyncio as redis
+import ssl
 
 REDIS_URL = os.getenv("REDIS_URL")
 
+print("🧹 Starting cleanup script...")
+print(f"📝 REDIS_URL exists: {bool(REDIS_URL)}")
+
 
 async def get_redis_client():
-    """Get Redis client"""
-    return redis.from_url(REDIS_URL, encoding="utf-8", decode_responses=True)
+    """Get Redis client with SSL support"""
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+
+    if REDIS_URL and REDIS_URL.startswith("rediss://"):
+        print("🔒 Using SSL connection")
+        return redis.from_url(
+            REDIS_URL, encoding="utf-8", decode_responses=True, ssl=ssl_context
+        )
+    else:
+        print("🔓 Using non-SSL connection")
+        return redis.from_url(REDIS_URL, encoding="utf-8", decode_responses=True)
 
 
 async def delete_key(key):
@@ -20,7 +35,7 @@ async def delete_key(key):
         result = await client.delete(key)
         return result > 0
     except Exception as e:
-        print(f"Error deleting {key}: {e}")
+        print(f"❌ Error deleting {key}: {e}")
         return False
     finally:
         if client:
@@ -35,7 +50,7 @@ async def get_from_redis(key):
         value = await client.get(key)
         return value
     except Exception as e:
-        print(f"Error getting {key}: {e}")
+        print(f"❌ Error getting {key}: {e}")
         return None
     finally:
         if client:
@@ -50,7 +65,7 @@ async def get_keys(pattern):
         keys = await client.keys(pattern)
         return keys
     except Exception as e:
-        print(f"Error getting keys: {e}")
+        print(f"❌ Error getting keys: {e}")
         return []
     finally:
         if client:
@@ -59,14 +74,18 @@ async def get_keys(pattern):
 
 async def cleanup_old_data():
     """Remove plant data older than 7 days"""
+    print("=" * 60)
     print("🧹 Starting cleanup of old data...")
+    print(f"⏰ Current time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 60)
 
     cutoff_date = datetime.now() - timedelta(days=7)
     print(f"📅 Cutoff date: {cutoff_date.strftime('%Y-%m-%d %H:%M')}")
+    print(f"ℹ️ Any data older than this will be deleted")
 
     # Get all plant keys
     keys = await get_keys("plant_bot:user:*")
-    print(f"🔍 Found {len(keys)} plant records")
+    print(f"\n🔍 Found {len(keys)} plant records to check")
 
     deleted = 0
     kept = 0
@@ -91,7 +110,8 @@ async def cleanup_old_data():
                     created_at = datetime.fromisoformat(created_at_str)
                     if created_at < cutoff_date:
                         should_delete = True
-                        reason = f"created {(datetime.now() - created_at).days} days ago, never watered"
+                        days_old = (datetime.now() - created_at).days
+                        reason = f"created {days_old} days ago, never watered"
             else:
                 # Has watering data - check last watered date
                 try:
@@ -114,15 +134,28 @@ async def cleanup_old_data():
                     print(f"❌ Failed to delete: {key}")
             else:
                 kept += 1
+                plant_name = plant.get("plant_name", "Unknown")
+                username = plant.get("username", "Unknown")
+                print(f"✅ Kept: {plant_name} ({username})")
 
         except Exception as e:
             print(f"⚠️ Error processing {key}: {e}")
 
-    print(f"\n📊 Cleanup Summary:")
-    print(f"  Deleted: {deleted}")
-    print(f"  Kept: {kept}")
-    print(f"  Total processed: {len(keys)}")
+    print(f"\n{'='*60}")
+    print(f"📊 Cleanup Summary:")
+    print(f"  🗑️ Deleted: {deleted}")
+    print(f"  ✅ Kept: {kept}")
+    print(f"  📋 Total processed: {len(keys)}")
+    print(f"{'='*60}")
 
 
 if __name__ == "__main__":
-    asyncio.run(cleanup_old_data())
+    try:
+        asyncio.run(cleanup_old_data())
+        print("\n✅ Cleanup completed successfully")
+    except Exception as e:
+        print(f"\n❌ Cleanup failed with error: {e}")
+        import traceback
+
+        traceback.print_exc()
+        exit(1)
